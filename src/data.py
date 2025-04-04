@@ -20,9 +20,11 @@ class ImageDataset(Dataset):
 
         # Transform to tensor and normalize
         self.transform = transforms.Compose([
+            transforms.Resize((256, 256)),
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+            transforms.Normalize(mean=[0, 0, 0], std=[1.0, 1.0, 1.0])
         ])
+
 
     def __len__(self):
         return len(self.image_paths)
@@ -56,7 +58,7 @@ def load_image_data(batch_size=32, num_workers=0):
 
 
 dataloader = load_image_data()
-
+print(dataloader)
 for img_names, img_tensors in dataloader:
     print(img_names)
     print(img_tensors.shape)  # Batch de imágenes en forma de tensor
