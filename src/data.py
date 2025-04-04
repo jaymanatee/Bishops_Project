@@ -13,7 +13,7 @@ class ImageDataset(Dataset):
         """
         self.image_paths = []
         self.image_names = []
-        self.error_files = 0
+        self.corrupted_files = 0
         for root_dir in root_dirs:
             for file in os.listdir(root_dir):
                 file_path = os.path.join(root_dir, file)
@@ -21,8 +21,7 @@ class ImageDataset(Dataset):
                     self.image_paths.append(file_path)
                     self.image_names.append(file)
                 else:
-                    self.error_files += 1
-                    print(self.error_files, end="\r")
+                    self.corrupted_files += 1
 
         # Transform to tensor and normalize
         self.transform = transforms.Compose([
@@ -55,7 +54,7 @@ def load_image_data(batch_size=32, num_workers=0):
     Returns:
         DataLoader con imágenes y nombres.
     """
-    root_dirs = root_dirs = ["../data/twitter2015_images/", "../data/twitter2017_images/"]
+    root_dirs = root_dirs = ["data/twitter2015_images/", "data/twitter2017_images/"]
     dataset = ImageDataset(root_dirs)
     
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
@@ -69,4 +68,4 @@ for img_names, img_tensors in dataloader:
     print(img_tensors.shape)  # Batch de imágenes en forma de tensor
     break  # Para mostrar solo un batch
 
-print(dataloader.dataset.error_files, "error files")
+print(dataloader.dataset.corrupted_files, "corrupted files")
