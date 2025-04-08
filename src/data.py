@@ -80,10 +80,10 @@ class CaptionDataset(Dataset):
                 for names, images in tqdm(dataloader, desc="Generating captions"):
                     images = images.to(self.device)
                     for name, image in zip(names, images):
-                        inputs = self.processor(images=image, return_tensors="pt").to(self.device)
+                        inputs = processor(images=image, return_tensors="pt").to(self.device)
                         with torch.no_grad():
-                            generated_ids = self.model.generate(pixel_values=inputs.pixel_values, max_length=50)
-                            caption = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                            generated_ids = model.generate(pixel_values=inputs.pixel_values, max_length=50)
+                            caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
                             self.image_names.append(name)
                             self.captions.append(caption)
 
