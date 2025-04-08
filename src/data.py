@@ -9,6 +9,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoProcessor, AutoModelForCausalLM
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
+from transformers import pipeline
 
 
 class ImageDataset(Dataset):
@@ -110,7 +111,7 @@ class CaptionDataset(Dataset):
         return img_name, caption
     
 
-class TextCaptionDataset(Dataset):
+class TextCaptionNerDataset(Dataset):
     """
     Dataset que fusiona textos de tweets con captions de imágenes.
 
@@ -120,7 +121,6 @@ class TextCaptionDataset(Dataset):
     """
     def __init__(self, text_ner_path, caption_path):
         self.tweets = pd.read_csv(text_ner_path, sep=';')
-        self.tweets = self.tweets[['id', 'tweet']]
         self.captions = pd.read_csv(caption_path, sep=';')
         self.data = self.tweets.merge(self.captions, left_on='id', right_on='image_name', how='inner')
     
@@ -129,7 +129,7 @@ class TextCaptionDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.data.iloc[idx]
-        return item['id'], item['tweet'], item['caption']
+        return item['id'], item['tweet'], item['caption'], item['ner']
 
 
 def create_text_ner_csvs(paths, cases):
@@ -174,6 +174,22 @@ def create_text_ner_csvs(paths, cases):
         df.to_csv(f"data/csv/text_and_ner_{case}.csv", sep=";")
 
 
+def process_labels(paths, caption_file):
+    cases = ['train', 'valid', 'test']
+    print('loading SA analyzer')
+    sentiment_analyzer = pipeline("sentiment-analysis")
+    print('loaded SA analyzer')
+    for path, case in zip(paths, cases):
+        print(f'Processing SA and padding NER in {case}')
+        data = TextCaptionNerDataset(path, caption_file)
+        df = pd.DataFrame(columns=['id', 'tweet', 'caption', 'ner', 'sa'])
+        for id, tweet, caption, ner in data:
+            ner += " O" * len(caption.split())
+            result = sentiment_analyzer(tweet + caption)
+            df.loc[len(df)] = [id, tweet, caption, ner, result[0]['label']]
+        df.to_csv(f'data/csv/{case}.csv', sep=';')
+
+
 def load_data(batch_size=32, num_workers=0):
     """
     Carga y prepara los datasets de imágenes y captions.
@@ -193,6 +209,10 @@ def load_data(batch_size=32, num_workers=0):
     create_text_ner_csvs(
         paths=["data/twitter2015/", "data/twitter2017/"],
         cases=["train", "valid", "test"]
+    )
+    process_labels(
+        paths = ["data/csv/text_and_ner_train.csv", "data/csv/text_and_ner_valid.csv", "data/csv/text_and_ner_test.csv"],
+        caption_file="data/csv/captionsImages.csv"
     )
 
     return image_dataset, caption_dataset
