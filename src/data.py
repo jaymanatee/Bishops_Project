@@ -204,7 +204,7 @@ def load_data(batch_size=32, num_workers=0):
     image_dataset = ImageDataset(root_dirs)
     dataloader = DataLoader(image_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
     
-    caption_dataset = CaptionDataset(dataloader, caption_file)
+    CaptionDataset(dataloader, caption_file)
 
     create_text_ner_csvs(
         paths=["data/twitter2015/", "data/twitter2017/"],
@@ -215,17 +215,10 @@ def load_data(batch_size=32, num_workers=0):
         caption_file="data/csv/captionsImages.csv"
     )
 
-    return image_dataset, caption_dataset
-
 
 if __name__ == "__main__":
+    
     batch_size = 1
     num_workers = 0
-
-    image_dataset, caption_dataset = load_data(batch_size=batch_size, num_workers=num_workers)
     
-    sample_idx = 0
-    img_name, caption = caption_dataset[sample_idx]
-
-    print(f"Image Name: {img_name}")
-    print(f"Caption: {caption}")
+    load_data(batch_size=batch_size, num_workers=num_workers)
