@@ -7,6 +7,9 @@ from tqdm import tqdm
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoProcessor, AutoModelForCausalLM
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 
 
 class ImageDataset(Dataset):
