@@ -11,13 +11,14 @@ import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
 
-
 class ImageDataset(Dataset):
+    """
+    Dataset personalizado para cargar imágenes desde múltiples directorios.
+
+    Args:
+        root_dirs (list): Lista de directorios donde buscar las imágenes.
+    """
     def __init__(self, root_dirs):
-        """
-        Args:
-            root_dirs (list): List of directories where to search for images.
-        """
         self.image_paths = []
         self.image_names = []
         for root_dir in root_dirs:
@@ -50,16 +51,17 @@ class ImageDataset(Dataset):
     
 
 class CaptionDataset(Dataset):
+    """
+    Dataset personalizado para cargar o generar captions de imágenes.
+
+    Si se proporciona un archivo CSV con captions, los carga. De lo contrario,
+    genera captions usando un modelo de lenguaje de imagen.
+
+    Args:
+        dataloader (DataLoader): Dataloader con imágenes para procesar.
+        caption_file (str, optional): Ruta al CSV con captions ya generados.
+    """
     def __init__(self, dataloader, caption_file=None):
-        """
-        Args:
-            image_data (list): List of images with their names.
-            model: The model for generating captions.
-            processor: Processor for the images.
-            device: The device ('cpu' or 'cuda').
-            caption_file: Path to CSV with pre-existing captions.
-        """
-        
         self.image_names = []
         self.captions = []
 
@@ -109,7 +111,13 @@ class CaptionDataset(Dataset):
     
 
 class TextCaptionDataset(Dataset):
+    """
+    Dataset que fusiona textos de tweets con captions de imágenes.
 
+    Args:
+        text_ner_path (str): Ruta al CSV con IDs de imagen, texto y entidades nombradas.
+        caption_path (str): Ruta al CSV con los captions generados.
+    """
     def __init__(self, text_ner_path, caption_path):
         self.tweets = pd.read_csv(text_ner_path, sep=';')
         self.tweets = self.tweets[['id', 'tweet']]
@@ -125,6 +133,13 @@ class TextCaptionDataset(Dataset):
 
 
 def create_text_ner_csvs(paths, cases):
+    """
+    Crea archivos CSV combinando texto y etiquetas NER desde archivos .txt.
+
+    Args:
+        paths (list): Directorios donde se encuentran los archivos .txt.
+        cases (list): Casos a procesar (por ejemplo, train, valid, test).
+    """
     for case in cases:
         if os.path.exists(f"data/csv/text_and_ner_{case}.csv"):
             continue
@@ -161,16 +176,11 @@ def create_text_ner_csvs(paths, cases):
 
 def load_data(batch_size=32, num_workers=0):
     """
-    Initializes the image and caption datasets and returns both.
+    Carga y prepara los datasets de imágenes y captions.
 
     Args:
-        batch_size (int): Batch size for loading data.
-        num_workers (int): Number of workers for loading data.
-        caption_file (str): Path to CSV file containing captions.
-
-    Returns:
-        image_dataset (ImageDataset): Dataset containing the images.
-        caption_dataset (CaptionDataset): Dataset containing the generated captions.
+        batch_size (int): Tamaño del batch.
+        num_workers (int): Número de procesos para el DataLoader.
     """
     root_dirs = ["data/twitter2015_images/", "data/twitter2017_images/"]
     caption_file = "data/csv/captionsImages.csv"
