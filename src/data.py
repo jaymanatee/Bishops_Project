@@ -8,6 +8,7 @@ from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoProcessor, AutoModelForCausalLM
 
+
 class ImageDataset(Dataset):
     def __init__(self, root_dirs):
         """
@@ -65,18 +66,26 @@ class CaptionDataset(Dataset):
             self.image_names = df['image_name'].tolist()
             self.captions = df['caption'].tolist()
         else:
-            for img_name, image in tqdm(image_data, desc="Generating captions"):
-                inputs = processor(images=image, return_tensors="pt").to(device)
-                with torch.no_grad():
-                    generated_ids = model.generate(pixel_values=inputs.pixel_values, max_length=50)
-                    caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-                    self.image_names.append(img_name)
-                    self.captions.append(caption)
+            try:
+                for img_name, image in tqdm(image_data, desc="Generating captions"):
+                    inputs = processor(images=image, return_tensors="pt").to(device)
+                    with torch.no_grad():
+                        generated_ids = model.generate(pixel_values=inputs.pixel_values, max_length=50)
+                        caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                        self.image_names.append(img_name)
+                        self.captions.append(caption)
 
-            # Save captions to CSV if they were generated
-            if caption_file:
-                df = pd.DataFrame({'image_name': self.image_names, 'caption': self.captions})
-                df.to_csv(caption_file, index=False)
+                # Save captions to CSV if they were generated
+                if caption_file:
+                    df = pd.DataFrame({'image_name': self.image_names, 'caption': self.captions})
+                    df.to_csv(caption_file, index=False, sep=";")
+                    
+            except KeyboardInterrupt:
+                print("Caption generation interrupted. Saving partial results.")
+                if caption_file:
+                    df = pd.DataFrame({'image_name': self.image_names, 'caption': self.captions})
+                    df.to_csv(caption_file, index=False, sep=";")
+                raise
 
     def __len__(self):
         return len(self.image_names)
@@ -121,7 +130,7 @@ def initialize_datasets(batch_size=32, num_workers=0, caption_file='captionsImag
     device = "cuda" if torch.cuda.is_available() else "cpu"
     checkpoint = "microsoft/git-base"
     processor = AutoProcessor.from_pretrained(checkpoint)
-    model = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)
+    model = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)  # Add trust_remote_code=True
     root_dirs = ["data/twitter2015_images/", "data/twitter2017_images/"]
 
     dataloader = load_image_data(root_dirs, batch_size=batch_size, num_workers=num_workers)
