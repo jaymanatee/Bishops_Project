@@ -51,69 +51,9 @@ class ImageDataset(Dataset):
         return img_name, image
     
 
-class CaptionDataset(Dataset):
+
     """
-    Dataset personalizado para cargar o generar captions de imágenes.
-
-    Si se proporciona un archivo CSV con captions, los carga. De lo contrario,
-    genera captions usando un modelo de lenguaje de imagen.
-
-    Args:
-        dataloader (DataLoader): Dataloader con imágenes para procesar.
-        caption_file (str, optional): Ruta al CSV con captions ya generados.
-    """
-    def __init__(self, dataloader, caption_file=None):
-        self.image_names = []
-        self.captions = []
-
-        # Check if CSV file with captions already exists
-        if caption_file and os.path.exists(caption_file):
-            df = pd.read_csv(caption_file, sep=";")
-            self.image_names = df['image_name'].tolist()
-            self.captions = df['caption'].tolist()
-        
-        else:
-
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            checkpoint = "microsoft/git-base"
-            processor = AutoProcessor.from_pretrained(checkpoint)
-            model = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)
-
-            try:
-                for names, images in tqdm(dataloader, desc="Generating captions"):
-                    images = images.to(device)
-                    for name, image in zip(names, images):
-                        inputs = processor(images=image, return_tensors="pt").to(device)
-                        with torch.no_grad():
-                            generated_ids = model.generate(pixel_values=inputs.pixel_values, max_length=50)
-                            caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-                            self.image_names.append(name)
-                            self.captions.append(caption)
-
-                # Save captions to CSV if they were generated
-                if caption_file:
-                    df = pd.DataFrame({'image_name': self.image_names, 'caption': self.captions})
-                    df.to_csv(caption_file, index=False, sep=";")
-                    
-            except KeyboardInterrupt:
-                print("Caption generation interrupted. Saving partial results.")
-                if caption_file:
-                    df = pd.DataFrame({'image_name': self.image_names, 'caption': self.captions})
-                    df.to_csv(caption_file, index=False, sep=";")
-                raise
-
-    def __len__(self):
-        return len(self.image_names)
-
-    def __getitem__(self, idx):
-        img_name = self.image_names[idx]
-        caption = self.captions[idx]
-        return img_name, caption
-    
-
-class TextCaptionNerDataset(Dataset):
-    """
-    Dataset que fusiona textos de tweets con captions de imágenes.
+    Dataset intermedio que fusiona textos de tweets con captions de imágenes y ners.
 
     Args:
         text_ner_path (str): Ruta al CSV con IDs de imagen, texto y entidades nombradas.
@@ -130,35 +70,72 @@ class TextCaptionNerDataset(Dataset):
     def __getitem__(self, idx):
         item = self.data.iloc[idx]
         return item['id'], item['tweet'], item['caption'], item['ner']
+    
+
+def create_captions(root_dirs, caption_file, batch_size=1, num_workers=0):
+    if os.path.exists(caption_file):
+        return
+    image_names = []
+    captions = []
+    image_dataset = ImageDataset(root_dirs)
+    dataloader = DataLoader(image_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    checkpoint = "microsoft/git-base"
+    processor = AutoProcessor.from_pretrained(checkpoint)
+    model = AutoModelForCausalLM.from_pretrained(checkpoint).to(device)
+
+    try:
+        for names, images in tqdm(dataloader, desc="Generating captions"):
+            images = images.to(device)
+            for name, image in zip(names, images):
+                inputs = processor(images=image, return_tensors="pt").to(device)
+                with torch.no_grad():
+                    generated_ids = model.generate(pixel_values=inputs.pixel_values, max_length=50)
+                    caption = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+                    image_names.append(name)
+                    captions.append(caption)
+
+        # Save captions to CSV if they were generated
+        if caption_file:
+            df = pd.DataFrame({'image_name': image_names, 'caption': captions})
+            df.to_csv(caption_file, index=False, sep=";")
+            
+    except KeyboardInterrupt:
+        print("Caption generation interrupted. Saving partial results.")
+        if caption_file:
+            df = pd.DataFrame({'image_name': image_names, 'caption': captions})
+            df.to_csv(caption_file, index=False, sep=";")
+        raise
 
 
-def create_text_ner_csvs(paths, cases):
+def process_data(paths, caption_file, cases):
     """
-    Crea archivos CSV combinando texto y etiquetas NER desde archivos .txt.
-
+    A partir de las captions creadas, crea archivos CSV conteniendo id, tweet, caption, ner y sa para 
+    futuro entrenamiento
     Args:
         paths (list): Directorios donde se encuentran los archivos .txt.
+        caption_file (string): Ruta de las captions en csv
         cases (list): Casos a procesar (por ejemplo, train, valid, test).
     """
+    sentiment_analyzer = pipeline("sentiment-analysis")
+    captions = pd.read_csv(caption_file, sep=';')
     for case in cases:
-        if os.path.exists(f"data/csv/text_and_ner_{case}.csv"):
+        print(f'processing {case}...')
+        if os.path.exists(f"data/csv/{case}.csv"):
             continue
-        df = pd.DataFrame(columns=['id', 'tweet', 'ner'])
+        df = pd.DataFrame(columns=['id', 'tweet', 'caption', 'ner', 'sa'])
         for path in paths:
-            id = ''
-            tweet = ''
-            ner = ''
+            id, tweet, ner = '', '', ''
             with open(path+case+'.txt', 'r', encoding='utf-8') as file:
-                idx = 0
                 for line in file:
-                    idx += 1
                     if line.strip() != '':
                         line = line.strip()
                         if line[:5] == "IMGID":
-                            if id:
-                                tweet = tweet.rstrip()
-                                ner = ner.rstrip()
-                                df.loc[len(df)] = [f"{id}.jpg", tweet, ner]
+                            if id and f'{id}.jpg' in captions['image_name'].values:
+                                caption = captions.loc[captions['image_name'] == f'{id}.jpg', 'caption'].values[0]
+                                ner += "O " * len(caption.split())
+                                sa = sentiment_analyzer(tweet + caption)[0]['label']
+                                df.loc[len(df)] = [id, tweet.rstrip(), caption, ner.rstrip(), sa]
                             id = line[6:]
                             tweet = ''
                             ner = ''
@@ -170,55 +147,29 @@ def create_text_ner_csvs(paths, cases):
                                 if tokens[1] == ';':
                                     tokens[1] = ','
                                 tweet += f"{tokens[0]} "
-                                ner += f" {tokens[1]} "
-        df.to_csv(f"data/csv/text_and_ner_{case}.csv", sep=";")
+                                ner += f"{tokens[1]} "
+                if f'{id}.jpg' in captions['image_name'].values:
+                    caption = captions.loc[captions['image_name'] == f'{id}.jpg', 'caption'].values[0]
+                    ner += "O " * len(caption.split())
+                    sa = sentiment_analyzer(tweet + caption)[0]['label']
+                    df.loc[len(df)] = [id, tweet.rstrip(), caption, ner.rstrip(), sa]
+        df.to_csv(f"data/csv/{case}.csv", sep=";", index=False)
 
 
-def process_labels(paths, caption_file):
-    cases = ['train', 'valid', 'test']
-    print('loading SA analyzer')
-    sentiment_analyzer = pipeline("sentiment-analysis")
-    print('loaded SA analyzer')
-    for path, case in zip(paths, cases):
-        print(f'Processing SA and padding NER in {case}')
-        data = TextCaptionNerDataset(path, caption_file)
-        df = pd.DataFrame(columns=['id', 'tweet', 'caption', 'ner', 'sa'])
-        for id, tweet, caption, ner in data:
-            ner += " O" * len(caption.split())
-            result = sentiment_analyzer(tweet + caption)
-            df.loc[len(df)] = [id, tweet, caption, ner, result[0]['label']]
-        df.to_csv(f'data/csv/{case}.csv', sep=';')
-
-
-def load_data(batch_size=32, num_workers=0):
+def main():
     """
-    Carga y prepara los datasets de imágenes y captions.
-
-    Args:
-        batch_size (int): Tamaño del batch.
-        num_workers (int): Número de procesos para el DataLoader.
+    Carga y prepara los datasets con todos los datos necesarios en forma de csv.
     """
-    root_dirs = ["data/twitter2015_images/", "data/twitter2017_images/"]
+    if not os.path.exists('data/csv'):
+        os.mkdir('data/csv')
+    data_dirs = ["data/twitter2015/", "data/twitter2017/"]
+    image_dirs = ["data/twitter2015_images/", "data/twitter2017_images/"]
     caption_file = "data/csv/captionsImages.csv"
-                
-    image_dataset = ImageDataset(root_dirs)
-    dataloader = DataLoader(image_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    cases = ["train", "valid", "test"]
     
-    CaptionDataset(dataloader, caption_file)
-
-    create_text_ner_csvs(
-        paths=["data/twitter2015/", "data/twitter2017/"],
-        cases=["train", "valid", "test"]
-    )
-    process_labels(
-        paths = ["data/csv/text_and_ner_train.csv", "data/csv/text_and_ner_valid.csv", "data/csv/text_and_ner_test.csv"],
-        caption_file="data/csv/captionsImages.csv"
-    )
+    create_captions(image_dirs, caption_file)
+    process_data(data_dirs, caption_file, cases)
 
 
-if __name__ == "__main__":
-    
-    batch_size = 1
-    num_workers = 0
-    
-    load_data(batch_size=batch_size, num_workers=num_workers)
+if __name__ == "__main__": 
+    main()
