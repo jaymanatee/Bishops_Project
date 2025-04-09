@@ -51,27 +51,6 @@ class ImageDataset(Dataset):
         return img_name, image
     
 
-
-    """
-    Dataset intermedio que fusiona textos de tweets con captions de imágenes y ners.
-
-    Args:
-        text_ner_path (str): Ruta al CSV con IDs de imagen, texto y entidades nombradas.
-        caption_path (str): Ruta al CSV con los captions generados.
-    """
-    def __init__(self, text_ner_path, caption_path):
-        self.tweets = pd.read_csv(text_ner_path, sep=';')
-        self.captions = pd.read_csv(caption_path, sep=';')
-        self.data = self.tweets.merge(self.captions, left_on='id', right_on='image_name', how='inner')
-    
-    def __len__(self):
-        return len(self.captions)
-
-    def __getitem__(self, idx):
-        item = self.data.iloc[idx]
-        return item['id'], item['tweet'], item['caption'], item['ner']
-    
-
 def create_captions(root_dirs, caption_file, batch_size=1, num_workers=0):
     if os.path.exists(caption_file):
         return
