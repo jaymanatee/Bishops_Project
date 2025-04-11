@@ -44,9 +44,11 @@ class TweetDataset(Dataset):
         row = self.dataset.iloc[index]
         return row["id"], row["tweet"], row["caption"], row["ner"], row["sa"]
 
+
 def collate_fn(batch):
     """
-    Custom collate function for padding the sequences in the batch.
+    Custom collate function for padding the sequences in the batch and ensuring
+    that the combined length of `tweet` + `caption` matches the length of `ner`.
     """
     
     ids = [item[0] for item in batch]
@@ -55,12 +57,22 @@ def collate_fn(batch):
     ners = [torch.tensor(item[3]) for item in batch]
     sentiment_labels = [item[4] for item in batch]
     
-    # Applying padding to sequences
     tweet_padded = pad_sequence(tweets, padding_value=0)
     caption_padded = pad_sequence(captions, padding_value=0)
+    
+    combined_padded = torch.cat((tweet_padded, caption_padded), dim=0)
     ner_padded = pad_sequence(ners, padding_value=0)
     
-    return ids, tweet_padded, caption_padded, ner_padded, sentiment_labels
+    if combined_padded.size(0) > ner_padded.size(0):
+        combined_padded = combined_padded[:ner_padded.size(0)]
+    elif combined_padded.size(0) < ner_padded.size(0):
+        padding = torch.zeros(ner_padded.size(0) - combined_padded.size(0), dtype=torch.long)
+        combined_padded = torch.cat((combined_padded, padding), dim=0)
+        
+    tweet_separated = combined_padded[:tweet_padded.size(0)]
+    caption_separated = combined_padded[tweet_padded.size(0):]
+    
+    return ids, tweet_separated, caption_separated, ner_padded, sentiment_labels
 
 def load_data(path: str, batch_size=64) -> tuple[DataLoader, DataLoader, DataLoader]:
     """
@@ -107,16 +119,3 @@ def load_data(path: str, batch_size=64) -> tuple[DataLoader, DataLoader, DataLoa
     )
 
     return train_dataloader, val_dataloader, test_dataloader
-
-
-path = 'data/csv/'
-train_loader, val_loader, test_loader = load_data(path,  batch_size=64)
-
-for batch in train_loader:
-    print(len(batch))
-    print("ID:", batch[0])
-    print("Tweet tokens:", batch[1])
-    print("Caption tokens:", batch[2])
-    print("NER tokens:", batch[3])
-    print("Sentiment label:", batch[4])
-    break
