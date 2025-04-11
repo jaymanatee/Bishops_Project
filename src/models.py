@@ -1,52 +1,34 @@
 import torch
 
 
-class NerSAModel(torch.nn.Module):
+class MyModel(torch.nn.Module):
     
-    def __init__(self, hidden_size, num_layers):
-        """
-        This method is the constructor of the class.
-
-        Args:
-            hidden_size: hidden size of the RNN layers
-            num_layers: number of RNN layers
-        """
-
-        # TODO
+    def __init__(self, hidden_size, num_layers, representation_size):
         super().__init__()
         input_size = 24
-        self.num_layers = num_layers
-        self.hidden_size = hidden_size
-        
-        self.lstm = torch.nn.LSTM(
-            input_size=input_size,
-            hidden_size=hidden_size,
-            batch_first=True,
-            num_layers=num_layers,
+
+        self.base_model = torch.nn.Sequential(
+            torch.nn.LSTM(
+                input_size=input_size,
+                hidden_size=hidden_size,
+                batch_first=True,
+                num_layers=num_layers,
+                bidirectional=True
+            ),
+            torch.nn.Linear(hidden_size, representation_size)
         )
-        self.fc = torch.nn.Linear(hidden_size, 24)
+        self.sa = torch.nn.Sequential(
+            torch.nn.Linear(representation_size, 2)
+        )
+        self.ner = torch.nn.Sequential(
+            torch.nn.Linear(representation_size, input_size)
+        )
+
 
     def forward(self, inputs: torch.Tensor) -> torch.Tensor:
-        """
-        This method is the forward pass of the model.
 
-        Args:
-            inputs: inputs tensor. Dimensions: [batch, number of past days, 24].
-
-        Returns:
-            output tensor. Dimensions: [batch, 24].
-        """
-
-        # TODO
-        batch_size = inputs.shape[0]
-        
-        h0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, device=inputs.device)
-        c0 = torch.zeros(self.num_layers, batch_size, self.hidden_size, device=inputs.device)
-
-        outputs, _ = self.lstm(inputs, (h0, c0))
-        final_hidden_state = outputs[:, -1, :]
-
-        return self.fc(final_hidden_state)
+        representation = self.base_model(inputs)
+        return self.ner(representation), self.sa(representation)
 
 
 # input -> red -> output intermedio (embedding/representacion)

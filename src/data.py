@@ -57,22 +57,13 @@ def collate_fn(batch):
     ners = [torch.tensor(item[3]) for item in batch]
     sentiment_labels = [item[4] for item in batch]
     
-    tweet_padded = pad_sequence(tweets, padding_value=0)
-    caption_padded = pad_sequence(captions, padding_value=0)
+    tweet_padded = pad_sequence(tweets, padding_value=0, batch_first=True)
+    caption_padded = pad_sequence(captions, padding_value=0, batch_first=True)
+    ners.append(torch.cat((tweet_padded[0], caption_padded[0])))
+    ner_padded = pad_sequence(ners, padding_value=0, batch_first=True)
+    ner_padded = ner_padded[:-1]
     
-    combined_padded = torch.cat((tweet_padded, caption_padded), dim=0)
-    ner_padded = pad_sequence(ners, padding_value=0)
-    
-    if combined_padded.size(0) > ner_padded.size(0):
-        combined_padded = combined_padded[:ner_padded.size(0)]
-    elif combined_padded.size(0) < ner_padded.size(0):
-        padding = torch.zeros(ner_padded.size(0) - combined_padded.size(0), dtype=torch.long)
-        combined_padded = torch.cat((combined_padded, padding), dim=0)
-        
-    tweet_separated = combined_padded[:tweet_padded.size(0)]
-    caption_separated = combined_padded[tweet_padded.size(0):]
-    
-    return ids, tweet_separated, caption_separated, ner_padded, sentiment_labels
+    return ids, tweet_padded, caption_padded, ner_padded, sentiment_labels
 
 def load_data(path: str, batch_size=64) -> tuple[DataLoader, DataLoader, DataLoader]:
     """
@@ -119,3 +110,13 @@ def load_data(path: str, batch_size=64) -> tuple[DataLoader, DataLoader, DataLoa
     )
 
     return train_dataloader, val_dataloader, test_dataloader
+
+
+if __name__ == "__main__":
+
+    train_dataloader, val_dataloader, test_dataloader = load_data("data/csv/")
+    for item in train_dataloader:
+        print(item[1].shape)
+        print(item[2].shape)
+        print(item[3].shape)
+        break
