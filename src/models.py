@@ -2,37 +2,29 @@ import torch
 
 
 class MyModel(torch.nn.Module):
-    
-    def __init__(self, hidden_size, num_layers, representation_size):
+    def __init__(self, embedding_dim, hidden_dim, sa_output_dim, ner_output_dim):
         super().__init__()
-        input_size = 24
-
-        self.base_model = torch.nn.Sequential(
-            torch.nn.LSTM(
-                input_size=input_size,
-                hidden_size=hidden_size,
-                batch_first=True,
-                num_layers=num_layers,
-                bidirectional=True
-            ),
-            torch.nn.Linear(hidden_size, representation_size)
-        )
-        self.sa = torch.nn.Sequential(
-            torch.nn.Linear(representation_size, 2)
-        )
-        self.ner = torch.nn.Sequential(
-            torch.nn.Linear(representation_size, input_size)
+        self.shared_lstm = torch.nn.LSTM(
+            input_size=embedding_dim,
+            hidden_size=hidden_dim,
+            batch_first=True,
+            bidirectional=True
         )
 
+        self.sa_fc = torch.nn.Linear(hidden_dim * 2, sa_output_dim)  
+        self.ner_fc = torch.nn.Linear(hidden_dim * 2, ner_output_dim)  # will broadcast
 
-    def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+    def forward(self, x):
+        lstm_out, (h_n, _) = self.shared_lstm(x)
 
-        representation = self.base_model(inputs)
-        return self.ner(representation), self.sa(representation)
+        # --- Sentiment Analysis ---
+        # Take the final hidden state from both directions
+        h_forward = h_n[-2]  # forward
+        h_backward = h_n[-1]  # backward
+        final_hidden = torch.cat((h_forward, h_backward), dim=1)
+        sa_output = self.sa_fc(final_hidden)  # [batch_size, sa_output_dim]
 
+        # --- Named Entity Recognition ---
+        ner_output = self.ner_fc(lstm_out)  # [batch_size, seq_len, ner_output_dim]
 
-# input -> red -> output intermedio (embedding/representacion)
-# -> dos modelos distintos (sa + ner) 
-    
-# crear data.py con dataset
-# train_functions (train_step, etc)
+        return sa_output, ner_output
