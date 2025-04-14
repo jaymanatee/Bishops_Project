@@ -2,11 +2,12 @@ import os
 import torch
 import pandas as pd
 from torch.utils.data import Dataset, DataLoader
-from transformers import BertTokenizer
+from transformers import BertTokenizer, BertModel
 from torch.nn.utils.rnn import pad_sequence
 import warnings
 
 warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 class TweetDataset(Dataset):
     """
@@ -26,7 +27,23 @@ class TweetDataset(Dataset):
         # Tokenize string input columns
         self.dataset['tweet'] = self.dataset['tweet'].apply(self.tokenize_text)
         self.dataset['caption'] = self.dataset['caption'].apply(self.tokenize_text)
-        self.dataset['ner'] = self.dataset['ner'].apply(self.tokenize_text)
+        tag2idx = {
+            'O': 0,
+            'B-PER': 1,
+            'I-PER': 2,
+            'B-LOC': 3,
+            'I-LOC': 4,
+            'B-ORG': 5,
+            'I-ORG': 6,
+            'B-OTHER': 7,
+            'I-OTHER': 8,
+            'B-MISC': 9,
+            'I-MISC': 10
+        }
+        tokenize_ner = lambda ner: torch.tensor([tag2idx[token] for token in ner.split()])
+        self.dataset['ner'] = self.dataset['ner'].apply(tokenize_ner)
+        tokenize_sa = lambda label: torch.tensor(1) if label=="POSITIVE" else torch.tensor(0)
+        self.dataset['sa'] = self.dataset['sa'].apply(tokenize_sa)
         
     def tokenize_text(self, text: str) -> torch.Tensor:
         """
@@ -55,7 +72,7 @@ def collate_fn(batch):
     tweets = [torch.tensor(item[1]) for item in batch]
     captions = [torch.tensor(item[2]) for item in batch]
     ners = [torch.tensor(item[3]) for item in batch]
-    sentiment_labels = [item[4] for item in batch]
+    sentiment_labels = torch.tensor([item[4] for item in batch])
     
     tweet_padded = pad_sequence(tweets, padding_value=0, batch_first=True)
     caption_padded = pad_sequence(captions, padding_value=0, batch_first=True)
@@ -114,9 +131,8 @@ def load_data(path: str, batch_size=64) -> tuple[DataLoader, DataLoader, DataLoa
 
 if __name__ == "__main__":
 
+    embedder = BertModel.from_pretrained('bert-base-uncased', ignore_mismatched_sizes=True)
     train_dataloader, val_dataloader, test_dataloader = load_data("data/csv/")
     for item in train_dataloader:
-        print(item[1].shape)
-        print(item[2].shape)
-        print(item[3].shape)
+        print(item[3][0])
         break

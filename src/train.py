@@ -2,9 +2,10 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from typing import Final
 from src.data import load_data
-from src.models import NerSAModel
-from src.utils import set_seed, save_model
+from src.models import MyModel
+from src.utils import set_seed, save_model, MultiTaskLoss
 from src.train_functions import train_step, val_step
+from tqdm.auto import tqdm
 
 
 DATA_PATH: Final[str] = "data/csv"
@@ -15,11 +16,11 @@ set_seed(42)
 
 def main():
 
-    epochs = 100
+    epochs = 1
     lr = 1e-3
     batch_size = 32
-    hidden_size = 64
-    num_layers = 1
+    hidden_size = 16
+    ner_output_dim = 11
     weight_decay = 0
 
     print("1. Loading data...")
@@ -30,29 +31,25 @@ def main():
     writer = SummaryWriter(f"runs/{name}")
 
     print("3. Creating model...")
-    model = NerSAModel(hidden_size=hidden_size, num_layers=num_layers).to(
+    model = MyModel(hidden_dim=hidden_size, ner_output_dim=ner_output_dim).to(
         device
     ).float()
 
     print("4. Defining loss, optimizer and scheduler...")
-    loss_fn = torch.nn.CrossEntropyLoss()
+    loss_fn = MultiTaskLoss()
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=lr, weight_decay=weight_decay
     )
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
-
+    
     print("5. Training and evaluating model...")
-    for epoch in range(epochs):
+    for epoch in tqdm(range(epochs)):
         
-        train_loss, train_acc = train_step(model, train_data, loss_fn, optimizer, device)
-        val_loss, val_acc = val_step(model, val_data, loss_fn, device)
+        train_loss = train_step(model, train_data, loss_fn, optimizer, writer, epoch, device)
+        val_loss = val_step(model, val_data, loss_fn, writer, epoch, device)
 
         writer.add_scalar("train/loss", train_loss, epoch)
-        writer.add_scalar("train/accuracy", train_acc, epoch)
         writer.add_scalar("validation/loss", val_loss, epoch)
-        writer.add_scalar("validation/accuracy", val_acc, epoch)
 
-        scheduler.step()
 
     print("6. Saving model...")
     save_model(model, name)

@@ -10,88 +10,84 @@ def train_step(model, train_data, loss_fn, optimizer, writer, epoch, device):
     
     model.train()
     total_loss = 0.0
-    total_correct = 0
-    total_samples = 0
 
-    for inputs, targets in train_data:
-        inputs = inputs.to(device).float()
-        targets = targets.to(device).long()
+    for _, tweet, caption, ner, sa in train_data:
+        tweet = tweet.to(device).long()
+        caption = caption.to(device).long()
+        ner = ner.to(device).long()
+        sa = sa.to(device).long()
+
+        inputs = torch.cat((tweet, caption), dim=1)
 
         optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = loss_fn(outputs, targets)
+        predicted_ner, predicted_sa = model(inputs)
+        loss = loss_fn(predicted_ner, ner, predicted_sa, sa)
         loss.backward()
         optimizer.step()
-        
-        preds = outputs.argmax(dim=1)
-        total_correct += (preds == targets).sum().item()
-        total_samples += targets.size(0)
 
         total_loss += loss.item()
 
     avg_loss = total_loss / len(train_data)
-    accuracy = total_correct / total_samples
 
     writer.add_scalar("train/loss", avg_loss, epoch)
-    writer.add_scalar("train/accuracy", accuracy, epoch)
 
-    return avg_loss, accuracy
+    return avg_loss
 
 
 @torch.no_grad()
-def val_step(model, val_data, loss_fn, scheduler, writer, epoch, device):
+def val_step(model, val_data, loss_fn, writer, epoch, device):
     """
     Evaluates the model on the validation data without updating weights and returning the current avarage loss and accuracy.
     """
     
     model.eval()
     total_loss = 0.0
-    total_correct = 0.0
-    total_samples = 0.0
 
-    for inputs, targets in val_data:
-        inputs = inputs.to(device).float()
-        targets = targets.to(device).long()
+    for _, tweet, caption, ner, sa in val_data:
+        tweet = tweet.to(device).long()
+        caption = caption.to(device).long()
+        ner = ner.to(device).long()
+        sa = sa.to(device).long()
 
-        outputs = model(inputs)
-        loss = loss_fn(outputs, targets)
+        inputs = torch.cat((tweet, caption), dim=1)
+
+        predicted_ner, predicted_sa = model(inputs)
+        loss = loss_fn(predicted_ner, ner, predicted_sa, sa)
         total_loss += loss.item()
     
-        preds = outputs.argmax(dim=1)
-        total_correct += (preds == targets).sum().item()
-        total_samples += targets.size(0)
-
     avg_loss = total_loss / len(val_data)
-    accuracy = total_correct / total_samples
 
     writer.add_scalar("validation/loss", avg_loss, epoch)
-    writer.add_scalar("validation/accuracy", accuracy, epoch)
 
-    scheduler.step()
-
-    return avg_loss, accuracy
+    return avg_loss
 
 
 @torch.no_grad()
-def t_step(model, test_data, device,):
-    """
+def t_step(model, test_data, accuracy_fn, device):
+    """ 
     Evaluates the model on the test data without updating weights and returning the current accuracy.
     """
 
     model.eval()
-    total_correct = 0
-    total_samples = 0
+    total_ner_accuracy = 0
+    total_sa_accuracy = 0
+    total_batches = 0
 
-    for inputs, targets in test_data:
-        inputs = inputs.to(device).float()
-        targets = targets.to(device).long()
+    for _, tweet, caption, ner, sa in test_data:
+        tweet = tweet.to(device).long()
+        caption = caption.to(device).long()
+        ner = ner.to(device).long()
+        sa = sa.to(device).long()
 
-        outputs = model(inputs)
-        preds = outputs.argmax(dim=1)
-        total_correct += (preds == targets).sum().item()
-        total_samples += targets.size(0)
+        inputs = torch.cat((tweet, caption), dim=1)
 
-    accuracy = total_correct / total_samples
-    print(f"Test Accuracy: {accuracy:.4f}")
+        predicted_ner, predicted_sa = model(inputs)
+        ner_accuracy, sa_accuracy = accuracy_fn(predicted_ner, ner, predicted_sa, sa)
+        total_ner_accuracy += ner_accuracy.item()
+        total_sa_accuracy += sa_accuracy.item()
+        total_batches += 1
 
-    return accuracy
+    ner_accuracy = total_ner_accuracy / total_batches
+    sa_accuracy = total_sa_accuracy / total_batches
+    print(f"Test NER Accuracy: {ner_accuracy:.4f}")
+    print(f"Test SA Accuracy: {sa_accuracy:.4f}")
