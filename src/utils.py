@@ -160,3 +160,34 @@ class MultiTaskAccuracy(torch.nn.Module):
 
         # Return both accuracies as a tuple
         return ner_accuracy, sa_accuracy
+
+def alert_generation(ner_output, sa_output, thresshold = 0.5):
+    batch_size, sa_output_dim = sa_output.shape
+    batch_size, seq_len, ner_output_dim = ner_output.shape
+    ner_alerts = []
+    sa_alerts = []
+    idx2tag = {
+            0: 'O',
+            1: 'B-PER',
+            2: 'I-PER',
+            3: 'B-LOC',
+            4: 'I-LOC',
+            5: 'B-ORG',
+            6: 'I-ORG',
+            7: 'B-OTHER',
+            8: 'I-OTHER',
+            9: 'B-MISC',
+            10: 'I-MISC'
+        }
+    for batch in range(batch_size):
+        if sa_output[batch] > thresshold:
+            sa_alerts.append("positive")
+        else:
+            sa_alerts.append("negative")
+        for tag in ner_output[batch]:
+            # ner_alerts.append(idx2tag[ner_output[batch, tag].item()])
+            # Habría que ver cómo devuelve el modelo las etiquetas NER para esto
+            ner_alerts.append(ner_output[batch, tag].item())
+    return ner_alerts, sa_alerts
+            
+        

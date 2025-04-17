@@ -3,7 +3,7 @@ from transformers import BertModel
 
 
 class MyModel(torch.nn.Module):
-    def __init__(self, hidden_dim, ner_output_dim):
+    def __init__(self, hidden_dim, ner_output_dim, dropout_prob=0.25):
         super().__init__()
 
         self.embedder = BertModel.from_pretrained('bert-base-uncased', ignore_mismatched_sizes=True)
@@ -15,9 +15,32 @@ class MyModel(torch.nn.Module):
             bidirectional=True
         )
 
-        self.sa_fc = torch.nn.Linear(hidden_dim * 2, 1)  
-        self.ner_fc = torch.nn.Linear(hidden_dim * 2, ner_output_dim)  # will broadcast
+        # # MODELO INICIAL
+        # self.sa_fc = torch.nn.Linear(hidden_dim * 2, 1)  
+        # self.ner_fc = torch.nn.Linear(hidden_dim * 2, ner_output_dim)  # will broadcast
 
+        # INTENTANDO MEJORAR EL MODELO
+        # Dropout for LSTM outputs and final layers
+        self.dropout = torch.nn.Dropout(dropout_prob)
+
+        # Layer normalization after LSTM
+        self.ln_lstm = torch.nn.LayerNorm(hidden_dim * 2)
+
+        # Sentiment Analysis head
+        self.sa_fc = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim * 2, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout_prob),
+            torch.nn.Linear(hidden_dim, 1)
+        )
+
+        # Named Entity Recognition head
+        self.ner_fc = torch.nn.Sequential(
+            torch.nn.Linear(hidden_dim * 2, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Dropout(dropout_prob),
+            torch.nn.Linear(hidden_dim, ner_output_dim)
+        )
     def forward(self, inputs):
 
         if inputs is None:
@@ -35,12 +58,14 @@ class MyModel(torch.nn.Module):
 
 
         lstm_out, (h_n, _) = self.shared_lstm(embeddings)
+        lstm_out = self.ln_lstm(self.dropout(lstm_out))  # Intentando mejorar modelo
 
         # --- Sentiment Analysis ---
         # Take the final hidden state from both directions
         h_forward = h_n[-2]  # forward
         h_backward = h_n[-1]  # backward
         final_hidden = torch.cat((h_forward, h_backward), dim=1)
+        final_hidden = self.dropout(final_hidden)  # Intentando mejorar modelo
         sa_output = self.sa_fc(final_hidden)  # [batch_size, sa_output_dim]
 
         # --- Named Entity Recognition ---

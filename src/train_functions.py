@@ -1,5 +1,6 @@
 import torch
 from torch.utils.data import DataLoader
+from utils import alert_generation
 
 
 @torch.enable_grad()
@@ -21,6 +22,7 @@ def train_step(model, train_data, loss_fn, optimizer, writer, epoch, device):
 
         optimizer.zero_grad()
         predicted_ner, predicted_sa = model(inputs)
+        alert_generation(predicted_ner, predicted_sa)
         loss = loss_fn(predicted_ner, ner, predicted_sa, sa)
         loss.backward()
         optimizer.step()
