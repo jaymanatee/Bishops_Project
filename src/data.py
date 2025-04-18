@@ -27,20 +27,7 @@ class TweetDataset(Dataset):
         # Tokenize string input columns
         self.dataset['tweet'] = self.dataset['tweet'].apply(self.tokenize_text)
         self.dataset['caption'] = self.dataset['caption'].apply(self.tokenize_text)
-        tag2idx = {
-            'O': 0,
-            'B-PER': 1,
-            'I-PER': 2,
-            'B-LOC': 3,
-            'I-LOC': 4,
-            'B-ORG': 5,
-            'I-ORG': 6,
-            'B-OTHER': 7,
-            'I-OTHER': 8,
-            'B-MISC': 9,
-            'I-MISC': 10
-        }
-        tokenize_ner = lambda ner: torch.tensor([tag2idx[token] for token in ner.split()])
+        tokenize_ner = lambda ner: torch.tensor([tag2idx(tag) for tag in ner.split()])
         self.dataset['ner'] = self.dataset['ner'].apply(tokenize_ner)
         tokenize_sa = lambda label: torch.tensor(1) if label=="POSITIVE" else torch.tensor(0)
         self.dataset['sa'] = self.dataset['sa'].apply(tokenize_sa)
@@ -60,6 +47,48 @@ class TweetDataset(Dataset):
     def __getitem__(self, index: int):
         row = self.dataset.iloc[index]
         return row["id"], row["tweet"], row["caption"], row["ner"], row["sa"]
+
+
+def tag2idx(tag: str) -> int:
+    """
+    Converts a tag string to its corresponding index.
+    """
+    
+    tag2idx = {
+        'O': 0,
+        'B-PER': 1,
+        'I-PER': 2,
+        'B-LOC': 3,
+        'I-LOC': 4,
+        'B-ORG': 5,
+        'I-ORG': 6,
+        'B-OTHER': 7,
+        'I-OTHER': 8,
+        'B-MISC': 9,
+        'I-MISC': 10
+    }
+    return tag2idx.get(tag)
+
+
+def idx2tag(idx: int) -> str:
+    """
+    Converts an index to its corresponding tag string.
+    """
+    
+    idx2tag = {
+        0: 'O',
+        1: 'B-PER',
+        2: 'I-PER',
+        3: 'B-LOC',
+        4: 'I-LOC',
+        5: 'B-ORG',
+        6: 'I-ORG',
+        7: 'B-OTHER',
+        8: 'I-OTHER',
+        9: 'B-MISC',
+        10: 'I-MISC'
+    }
+    return idx2tag.get(idx)
 
 
 def collate_fn(batch):

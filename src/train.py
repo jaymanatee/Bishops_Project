@@ -3,7 +3,7 @@ from torch.utils.tensorboard import SummaryWriter
 from typing import Final
 from src.data import load_data
 from src.models import MyModel
-from src.utils import set_seed, save_model, MultiTaskLoss
+from src.utils import set_seed, save_model, MultiTaskLoss, MultiTaskAccuracy
 from src.train_functions import train_step, val_step
 from tqdm.auto import tqdm
 
@@ -16,12 +16,12 @@ set_seed(42)
 
 def main():
 
-    epochs = 1
+    epochs = 20
     lr = 1e-3
     batch_size = 32
     hidden_size = 16
     ner_output_dim = 11
-    weight_decay = 0
+    weight_decay = 1e-4
 
     print("1. Loading data...")
     train_data, val_data, _, = load_data(DATA_PATH, batch_size)
@@ -37,19 +37,15 @@ def main():
 
     print("4. Defining loss, optimizer and scheduler...")
     loss_fn = MultiTaskLoss()
+    accuracy_fn = MultiTaskAccuracy()
     optimizer = torch.optim.AdamW(
         model.parameters(), lr=lr, weight_decay=weight_decay
     )
     
     print("5. Training and evaluating model...")
     for epoch in tqdm(range(epochs)):
-        
-        train_loss = train_step(model, train_data, loss_fn, optimizer, writer, epoch, device)
-        val_loss = val_step(model, val_data, loss_fn, writer, epoch, device)
-
-        writer.add_scalar("train/loss", train_loss, epoch)
-        writer.add_scalar("validation/loss", val_loss, epoch)
-
+        _, _ = train_step(model, train_data, loss_fn, optimizer, writer, epoch, device, accuracy_fn)
+        _, _ = val_step(model, val_data, writer, epoch, device, accuracy_fn)
 
     print("6. Saving model...")
     save_model(model, name)

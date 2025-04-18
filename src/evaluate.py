@@ -29,9 +29,11 @@ def main() -> None:
     model.eval()
     accuracy = MultiTaskAccuracy()
     with torch.no_grad():
-        test_accuracy = t_step(model=model, test_data=test_data, accuracy_fn=accuracy, device=device)
+        ner_accuracy, sa_accuracy =\
+            t_step(model=model, test_data=test_data, accuracy_fn=accuracy, device=device)
 
-    print(f"Test Accuracy: {test_accuracy:.4f}")
+    print(f"NER Accuracy: {ner_accuracy:.4f}")
+    print(f"SA Accuracy: {sa_accuracy:.4f}")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,8 @@ import numpy as np
 from torch.jit import RecursiveScriptModule
 import os
 import random
+from collections import Counter
+from src.data import idx2tag
 
 @torch.no_grad()
 def parameters_to_double(model: torch.nn.Module) -> None:
@@ -90,7 +92,7 @@ def set_seed(seed: int) -> None:
 
 
 class MultiTaskLoss(torch.nn.Module):
-    def __init__(self, ner_weight=1.0, sa_weight=1.0):
+    def __init__(self, ner_weight=1.0, sa_weight=1.0, o_tag_penalty=0.3):
         super(MultiTaskLoss, self).__init__()
 
         self.ner_loss_fn = torch.nn.CrossEntropyLoss()
@@ -98,6 +100,7 @@ class MultiTaskLoss(torch.nn.Module):
 
         self.ner_weight = ner_weight
         self.sa_weight = sa_weight
+        self.o_tag_penalty = o_tag_penalty
 
     def forward(self, ner_logits, ner_labels, sa_logits, sa_labels):
         """
@@ -108,27 +111,30 @@ class MultiTaskLoss(torch.nn.Module):
         - sa_labels:  [batch_size] or [batch_size] (0 or 1 labels)
         """
 
+        # Apply penalty to the O tag logits
+        ner_logits[:, :, 0] *= self.o_tag_penalty
+
         # Flatten NER predictions and labels for loss
+        ner_logits = ner_logits.view(-1, ner_logits.size(-1))
         ner_loss = self.ner_loss_fn(
-            ner_logits.view(-1, ner_logits.size(-1)),
+            ner_logits,
             ner_labels.view(-1)
         )
 
         # Ensure labels are float for BCEWithLogitsLoss
         sa_labels = sa_labels.float().view(-1, 1)  # ensure shape is [batch_size, 1]
-        sa_loss = self.sa_loss_fn(sa_logits, sa_labels)
+        sa_loss = self.sa_loss_fn(sa_logits.view(-1, 1), sa_labels)
 
         total_loss = self.ner_weight * ner_loss + self.sa_weight * sa_loss
         return total_loss
     
 
-import torch
-
 class MultiTaskAccuracy(torch.nn.Module):
-    def __init__(self, ner_threshold=0.5):
+    def __init__(self, ner_threshold=0.5, sa_threshold=0.5):
         super(MultiTaskAccuracy, self).__init__()
 
         self.ner_threshold = ner_threshold  # Threshold for NER (e.g., 0.5)
+        self.sa_threshold = sa_threshold
 
     def forward(self, ner_logits, ner_labels, sa_logits, sa_labels):
         """
@@ -142,6 +148,10 @@ class MultiTaskAccuracy(torch.nn.Module):
         # --- NER Accuracy ---
         # Find the predicted NER labels by taking the argmax along the last dimension (num_ner_tags)
         ner_predictions = torch.argmax(ner_logits, dim=-1)  # [batch_size, seq_len]
+        # Do a counter to check the number of appearances of each label
+        ner_predictions_tags = [idx2tag(idx.item()) for idx in ner_predictions.view(-1)]
+        counter = Counter(ner_predictions_tags)
+        print("NER Predictions Counter:", counter)
 
         # Flatten the NER logits and labels for accuracy calculation (ignoring padding)
         non_padding_mask = ner_labels != -100  # assuming padding labels are -100
@@ -151,43 +161,27 @@ class MultiTaskAccuracy(torch.nn.Module):
 
         # --- SA Accuracy ---
         # Convert logits to predictions (0 or 1)
-        sa_predictions = (torch.sigmoid(sa_logits) > self.ner_threshold).float()  # Apply sigmoid and threshold
+        sa_predictions = (torch.sigmoid(sa_logits) > self.sa_threshold).float()  # Apply sigmoid and threshold
 
         # Compare with the true labels (0 or 1)
         sa_correct = (sa_predictions == sa_labels).float()
-
         sa_accuracy = sa_correct.sum() / sa_labels.size(0)
 
         # Return both accuracies as a tuple
         return ner_accuracy, sa_accuracy
+    
 
-def alert_generation(ner_output, sa_output, thresshold = 0.5):
-    batch_size, sa_output_dim = sa_output.shape
-    batch_size, seq_len, ner_output_dim = ner_output.shape
-    ner_alerts = []
-    sa_alerts = []
-    idx2tag = {
-            0: 'O',
-            1: 'B-PER',
-            2: 'I-PER',
-            3: 'B-LOC',
-            4: 'I-LOC',
-            5: 'B-ORG',
-            6: 'I-ORG',
-            7: 'B-OTHER',
-            8: 'I-OTHER',
-            9: 'B-MISC',
-            10: 'I-MISC'
-        }
-    for batch in range(batch_size):
-        if sa_output[batch] > thresshold:
-            sa_alerts.append("positive")
-        else:
-            sa_alerts.append("negative")
-        for tag in ner_output[batch]:
-            # ner_alerts.append(idx2tag[ner_output[batch, tag].item()])
-            # Habría que ver cómo devuelve el modelo las etiquetas NER para esto
-            ner_alerts.append(ner_output[batch, tag].item())
-    return ner_alerts, sa_alerts
-            
-        
+def alert_generation(ner_output, sa_output, threshold = 0.5):
+    """
+    This function generates alerts based on the NER and SA outputs.
+
+    Args:
+        ner_output: The output of the NER model.
+        sa_output: The output of the SA model.
+        threshold: The threshold for generating alerts.
+
+    Returns:
+        A list of alerts.
+    """
+
+    pass

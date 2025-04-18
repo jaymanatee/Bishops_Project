@@ -41,6 +41,7 @@ class MyModel(torch.nn.Module):
             torch.nn.Dropout(dropout_prob),
             torch.nn.Linear(hidden_dim, ner_output_dim)
         )
+
     def forward(self, inputs):
 
         if inputs is None:
@@ -71,6 +72,6 @@ class MyModel(torch.nn.Module):
         # --- Named Entity Recognition ---
         ner_output = self.ner_fc(lstm_out)  # [batch_size, seq_len, ner_output_dim]
 
-        return ner_output, sa_output
+        return ner_output, sa_output.squeeze(1)
     
 
