@@ -1,78 +1,74 @@
 import torch
 import numpy as np
-from torch.jit import RecursiveScriptModule
 import os
 import random
+
 
 @torch.no_grad()
 def parameters_to_double(model: torch.nn.Module) -> None:
     """
-    This function transforms the model parameters to double.
+    Converts all model parameters to double precision (torch.float64).
 
     Args:
-        model: pytorch model.
+        model: A PyTorch model.
     """
-
     for param in model.parameters():
         param.data = param.data.double()
 
 
 def save_model(model: torch.nn.Module, name: str) -> None:
     """
-    This function saves a model's state_dict in the 'models' folder.
-    It should create the 'models' folder if it doesn't already exist.
+    Saves the model's state_dict to the 'models' directory.
+    Creates the directory if it does not exist.
 
     Args:
-        model: pytorch model.
-        name: name of the model (without the extension, e.g. name.pt).
+        model: A PyTorch model.
+        name: File name without extension (e.g., 'my_model' -> 'my_model.pt').
     """
-    
-    # Create the 'models' folder if it doesn't exist
     if not os.path.isdir("models"):
         os.makedirs("models")
-    
+
     # Save the model's state_dict
     torch.save(model.state_dict(), f"models/{name}.pt")
-    
+
     print(f"Model saved as models/{name}.pt")
     return None
 
 
-
-def load_model(model_class: torch.nn.Module, name: str, hidden_dim=16, ner_output_dim=11) -> torch.nn.Module:
+def load_model(
+    model_class, name: str, hidden_dim=16, ner_output_dim=12
+) -> torch.nn.Module:
     """
-    This function is to load a model's state_dict from the 'models' folder.
+    Loads a model from a saved state_dict in the 'models' folder.
 
     Args:
-        model_class: The class of the model (e.g., MyModel).
-        name: Name of the model to load (without the extension, e.g., name.pt).
-        hidden_dim: Default value for hidden_dim.
-        ner_output_dim: Default value for ner_output_dim.
+        model_class: The model class (e.g., MyModel).
+        name: The filename of the model to load (without '.pt').
+        hidden_dim: Hidden layer size for the model.
+        ner_output_dim: Number of output labels for the NER task.
 
     Returns:
-        A model instance with the loaded state_dict.
+        A model instance with weights loaded.
     """
-    
-    # Create a model instance with the default arguments
-    model = model_class(hidden_dim=hidden_dim, ner_output_dim=ner_output_dim)
-    
-    # Load the model's state_dict
-    model.load_state_dict(torch.load(f"models/{name}.pt"))
-    
-    # Set the model to evaluation mode (important for inference)
-    
-    print(f"Model {name} loaded successfully! :-)))) almu esta feliz")
-    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = model_class(hidden_dim=hidden_dim, ner_output_dim=ner_output_dim).to(device)
+
+    # Load the model to the correct device
+    state_dict = torch.load(f"models/{name}.pt", map_location=device)
+    model.load_state_dict(state_dict)
+
+    print(f"Model '{name}' loaded successfully on {device} ")
     return model
+
 
 def set_seed(seed: int) -> None:
     """
-    This function sets a seed and ensure a deterministic behavior.
+    Sets all relevant seeds to ensure deterministic behavior.
 
     Args:
-        seed: seed number to fix radomness.
+        seed: An integer value to fix randomness.
     """
-
     np.random.seed(seed)
     random.seed(seed)
 
@@ -90,73 +86,107 @@ def set_seed(seed: int) -> None:
 
 
 class MultiTaskLoss(torch.nn.Module):
-    def __init__(self, ner_weight=1.0, sa_weight=1.0):
+    """
+    Multi-task loss function for NER and Sentiment Analysis (SA).
+    Combines cross-entropy loss for NER, binary cross-entropy for SA,
+    and optionally CRF loss for the final epochs.
+    """
+
+    def __init__(self, model, device, ner_weight=1, sa_weight=1.0, crf_weight=0.01):
         super(MultiTaskLoss, self).__init__()
+        self.model = model
 
-        self.ner_loss_fn = torch.nn.CrossEntropyLoss()
+        # Adjust class weights for NER to address class imbalance
+        weights = 10 * torch.tensor(
+            [
+                0,
+                1 / 0.002,
+                1 / 0.002,
+                1 / 0.002,
+                1 / 0.002,
+                1 / 0.002,
+                1 / 0.002,
+                1 / 0.002,
+                1 / 0.002,
+                1 / 0.002,
+                1 / 0.002,
+                0,
+            ]
+        )
+        weights = weights.to(device)
+
+        self.ner_loss_fn = torch.nn.CrossEntropyLoss(weight=weights)
         self.sa_loss_fn = torch.nn.BCEWithLogitsLoss()
-
         self.ner_weight = ner_weight
         self.sa_weight = sa_weight
+        self.crf_weight = crf_weight
+        self.device = device
 
-    def forward(self, ner_logits, ner_labels, sa_logits, sa_labels):
+    def forward(self, ner_logits, ner_labels, sa_logits, sa_labels, last_epochs=False):
         """
-        Inputs:
-        - ner_logits: [batch_size, seq_len, num_ner_tags]
-        - ner_labels: [batch_size, seq_len]
-        - sa_logits:  [batch_size]  (logits for binary classification)
-        - sa_labels:  [batch_size] or [batch_size] (0 or 1 labels)
-        """
+        Computes the combined multi-task loss.
 
-        # Flatten NER predictions and labels for loss
+        Args:
+            ner_logits: Tensor of shape [batch_size, seq_len, num_ner_tags]
+            ner_labels: Tensor of shape [batch_size, seq_len]
+            sa_logits: Tensor of shape [batch_size] (binary sentiment prediction)
+            sa_labels: Tensor of shape [batch_size]
+            last_epochs: If True, includes CRF loss.
+
+        Returns:
+            Total combined loss.
+        """
+        total_loss = 0
+
+        if last_epochs:
+            mask = (ner_labels != 11).to(torch.bool).to(self.device)
+            crf_loss = -self.model.crf(
+                ner_logits, ner_labels, mask=mask, reduction="mean"
+            )
+            total_loss += self.crf_weight * crf_loss
+
         ner_loss = self.ner_loss_fn(
-            ner_logits.view(-1, ner_logits.size(-1)),
-            ner_labels.view(-1)
+            ner_logits.view(-1, ner_logits.size(-1)), ner_labels.view(-1)
         )
+        sa_loss = self.sa_loss_fn(sa_logits.view(-1, 1), sa_labels.float().view(-1, 1))
 
-        # Ensure labels are float for BCEWithLogitsLoss
-        sa_labels = sa_labels.float().view(-1, 1)  # ensure shape is [batch_size, 1]
-        sa_loss = self.sa_loss_fn(sa_logits, sa_labels)
+        total_loss += self.ner_weight * ner_loss + self.sa_weight * sa_loss
 
-        total_loss = self.ner_weight * ner_loss + self.sa_weight * sa_loss
         return total_loss
-    
 
-import torch
 
 class MultiTaskAccuracy(torch.nn.Module):
-    def __init__(self, ner_threshold=0.5):
+    """
+    Computes accuracy for both NER and Sentiment Analysis tasks.
+    """
+
+    def __init__(self, device, ner_threshold=0.5, sa_threshold=0.5):
         super(MultiTaskAccuracy, self).__init__()
+        self.ner_threshold = ner_threshold
+        self.sa_threshold = sa_threshold
+        self.device = device
 
-        self.ner_threshold = ner_threshold  # Threshold for NER (e.g., 0.5)
-
-    def forward(self, ner_logits, ner_labels, sa_logits, sa_labels):
+    def forward(self, ner_predictions, ner_labels, sa_logits, sa_labels):
         """
-        Inputs:
-        - ner_logits: [batch_size, seq_len, num_ner_tags] (raw logits)
-        - ner_labels: [batch_size, seq_len]
-        - sa_logits:  [batch_size]  (logits for binary classification)
-        - sa_labels:  [batch_size] or [batch_size] (0 or 1 labels)
+        Computes accuracy for each task separately.
+
+        Args:
+            ner_predictions: Tensor [batch_size, seq_len] (predicted NER tags)
+            ner_labels: Tensor [batch_size, seq_len] (ground truth NER tags)
+            sa_logits: Tensor [batch_size] (logits for SA)
+            sa_labels: Tensor [batch_size] (binary sentiment labels)
+
+        Returns:
+            Tuple: (NER accuracy, SA accuracy)
         """
-
-        # --- NER Accuracy ---
-        # Find the predicted NER labels by taking the argmax along the last dimension (num_ner_tags)
-        ner_predictions = torch.argmax(ner_logits, dim=-1)  # [batch_size, seq_len]
-
-        # Flatten the NER logits and labels for accuracy calculation (ignoring padding)
-        non_padding_mask = ner_labels != -100  # assuming padding labels are -100
+        # NER accuracy
+        non_padding_mask = ner_labels != 11
         ner_correct = (ner_predictions == ner_labels) & non_padding_mask
-
         ner_accuracy = ner_correct.sum().float() / non_padding_mask.sum().float()
 
-        # --- SA Accuracy ---
-        # Convert logits to predictions (0 or 1)
-        sa_predictions = (torch.sigmoid(sa_logits) > self.ner_threshold).float()  # Apply sigmoid and threshold
-
-        # Compare with the true labels (0 or 1)
+        # SA accuracy
+        sa_predictions = (torch.sigmoid(sa_logits) > self.sa_threshold).float()
         sa_correct = (sa_predictions == sa_labels).float()
-
         sa_accuracy = sa_correct.sum() / sa_labels.size(0)
 
-        # Return both accuracies as a tuple
         return ner_accuracy, sa_accuracy
