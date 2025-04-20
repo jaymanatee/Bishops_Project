@@ -172,5 +172,10 @@ ALERT -> Governor McCrory presents NC flag to Ruger CEO Mike Fifer at jobs annou
 
 ### 👥 Team
 
-Project developed by a student team from the IMAT program.  
-Course: DL+NLP, Academic Year 2024/2025
+The project was developed by a collaborative student team from the IMAT program. The team worked cohesively, with each member contributing significantly across different aspects of the project. While all members contributed to various tasks, their specific areas of focus were:
+
+- **Enrique Fernández Baillo** and **Jacobo Banús** focused on research aimed at improving the models, especially the optimization of the NER and sentiment analysis components.
+- **Almudena Garrido** concentrated on image captioning, embeddings, and alert generation, ensuring that visual and textual data were effectively integrated into the pipeline.
+- **Sofía Negueruela** took charge of the data preprocessing and organization of the overall project structure, including maintaining the scientific paper's order and clarity.
+
+Despite the division of tasks, the team worked closely and collaboratively, enriching each other’s contributions to create a seamless and effective system for automatic alert generation from tweets and associated images.
