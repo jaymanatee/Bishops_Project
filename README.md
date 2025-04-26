@@ -13,7 +13,7 @@ The system processes textual and visual information from social media posts (spe
 **Final mode**l: 
 https://drive.google.com/file/d/1BloRG8GjU-FkeTahLej-N6U25gaR8omv/view?usp=sharing
 
-**Images** (extract in data folder to match folder hierarchy explined further below): https://1drv.ms/u/c/e79fddf5998bd0e8/EfWRIvgmlItPjCuOW1BQqfoBms_PRX_pA53kiKP9wLaiYA?e=CKf5vJ
+**Images** (extract in data folder to match folder hierarchy explained further below): https://1drv.ms/u/c/e79fddf5998bd0e8/EfWRIvgmlItPjCuOW1BQqfoBms_PRX_pA53kiKP9wLaiYA?e=CKf5vJ
 
 ---
 
